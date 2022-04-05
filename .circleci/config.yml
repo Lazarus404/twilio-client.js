@@ -29,11 +29,6 @@ parameters:
 # Executors
 ###
 executors:
-  machine-executor:
-    machine: true
-  generic-executor:
-    docker:
-      - image: alpine:3.7
   docker-with-browser:
     parameters:
       browser:
@@ -121,7 +116,7 @@ jobs:
       browser:
         type: string
     executor:
-      name: machine-executor
+      name: docker-with-browser
     environment:
       BROWSER: << parameters.browser >>
       BVER: << parameters.bver >>
