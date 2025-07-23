@@ -1,11 +1,11 @@
-import * as assert from 'assert';
-import * as sinon from 'sinon';
-import { SinonFakeTimers } from 'sinon';
-import StatsMonitor from '../../lib/twilio/statsMonitor';
+import * as assert from "assert";
+import * as sinon from "sinon";
+import { SinonFakeTimers } from "sinon";
+import StatsMonitor from "../../lib/twilio/statsMonitor";
 
-describe('StatsMonitor', () => {
+describe("StatsMonitor", () => {
   const SAMPLE_COUNT_RAISE = 3;
-  const STAT_NAME = 'jitter';
+  const STAT_NAME = "jitter";
 
   let clock: SinonFakeTimers;
   let getRTCStats: () => any;
@@ -17,18 +17,18 @@ describe('StatsMonitor', () => {
 
   beforeEach(() => {
     clock = sinon.useFakeTimers(Date.now());
-    getRTCStats = () => Promise.resolve({...stats});
+    getRTCStats = () => Promise.resolve({ ...stats });
     Mos = { calculate: () => 1 };
     stats = { [STAT_NAME]: 30 };
-    thresholds = { [STAT_NAME]: { max: 30, min: 10, maxDuration: 20 }};
-    wait = () => new Promise(r => setTimeout(r, 0));
+    thresholds = { [STAT_NAME]: { max: 30, min: 10, maxDuration: 20 } };
+    wait = () => new Promise((r) => setTimeout(r, 0));
   });
 
   afterEach(() => {
     clock.restore();
   });
 
-  describe('StatsMonitor.enable', () => {
+  describe("StatsMonitor.enable", () => {
     it(`Should throw an error without a PeerConnection in both 'constructor' and 'enable'`, () => {
       monitor = new StatsMonitor();
       assert.throws(() => monitor.enable(null));
@@ -43,7 +43,7 @@ describe('StatsMonitor', () => {
       const onSample = sinon.stub();
 
       monitor = new StatsMonitor({ getRTCStats });
-      monitor.on('sample', onSample);
+      monitor.on("sample", onSample);
       monitor.enable({});
 
       clock.tick(1050);
@@ -53,12 +53,12 @@ describe('StatsMonitor', () => {
     });
   });
 
-  describe('StatsMonitor.disable', () => {
+  describe("StatsMonitor.disable", () => {
     it(`Should stop fetching samples`, () => {
       const onSample = sinon.stub();
 
       monitor = new StatsMonitor({ getRTCStats });
-      monitor.on('sample', onSample);
+      monitor.on("sample", onSample);
       monitor.enable({});
 
       clock.tick(2050);
@@ -70,14 +70,14 @@ describe('StatsMonitor', () => {
     });
   });
 
-  describe('StatsMonitor.disableWarnings', () => {
+  describe("StatsMonitor.disableWarnings", () => {
     it(`Should NOT raise warnings when thresholds reached and warnings are disabled`, () => {
       const onWarning = sinon.stub();
       thresholds[STAT_NAME].max = 10;
       monitor = new StatsMonitor({ getRTCStats, thresholds });
       monitor.enable({});
 
-      monitor.on('warning', onWarning);
+      monitor.on("warning", onWarning);
       monitor.disableWarnings();
 
       clock.tick(3000);
@@ -87,14 +87,14 @@ describe('StatsMonitor', () => {
     });
   });
 
-  describe('StatsMonitor.enableWarnings', () => {
+  describe("StatsMonitor.enableWarnings", () => {
     it(`Should raise warning after re-enabling warnings`, () => {
       const onWarning = sinon.stub();
       thresholds[STAT_NAME].max = 10;
       monitor = new StatsMonitor({ getRTCStats, thresholds });
       monitor.enable({});
 
-      monitor.on('warning', onWarning);
+      monitor.on("warning", onWarning);
       monitor.disableWarnings();
       clock.tick(3000);
       monitor.enableWarnings();
@@ -107,28 +107,28 @@ describe('StatsMonitor', () => {
 
   describe(`StatsMonitor on 'sample'`, () => {
     const REQUIRED_FIELDS = [
-      'audioInputLevel',
-      'audioOutputLevel',
-      'bytesReceived',
-      'bytesSent',
-      'codecName',
-      'jitter',
-      'mos',
-      'packetsLost',
-      'packetsLostFraction',
-      'packetsReceived',
-      'packetsSent',
-      'rtt',
-      'timestamp',
+      "audioInputLevel",
+      "audioOutputLevel",
+      "bytesReceived",
+      "bytesSent",
+      "codecName",
+      "jitter",
+      "mos",
+      "packetsLost",
+      "packetsLostFraction",
+      "packetsReceived",
+      "packetsSent",
+      "rtt",
+      "timestamp",
       {
-        'totals': [
-          'bytesReceived',
-          'bytesSent',
-          'packetsLost',
-          'packetsLostFraction',
-          'packetsReceived',
-          'packetsSent',
-        ]
+        totals: [
+          "bytesReceived",
+          "bytesSent",
+          "packetsLost",
+          "packetsLostFraction",
+          "packetsReceived",
+          "packetsSent",
+        ],
       },
     ];
 
@@ -138,14 +138,14 @@ describe('StatsMonitor', () => {
       stats = {
         bytesReceived: 200,
         bytesSent: 300,
-        codecName: 'testcodec',
+        codecName: "testcodec",
         jitter: 3,
         packetsLost: 5,
         packetsReceived: 15,
         packetsSent: 20,
         rtt: 30,
         timestamp: Date.now(),
-      }
+      };
     });
 
     it(`Should emit 'sample' without missing values`, (done) => {
@@ -153,20 +153,22 @@ describe('StatsMonitor', () => {
         assert.notEqual(val, null);
         assert.notEqual(val, undefined);
         assert.notEqual(val, NaN);
-        assert.notEqual(val, '');
+        assert.notEqual(val, "");
       };
 
       getRTCStats = () => Promise.resolve(stats);
       monitor = new StatsMonitor({ getRTCStats, Mos });
       monitor.addVolumes(123, 123);
-      monitor.on('sample', (sample: any) => {
+      monitor.on("sample", (sample: any) => {
         REQUIRED_FIELDS.forEach((field: any) => {
-          if (typeof field === 'string') {
+          if (typeof field === "string") {
             checkNotEmpty(sample[field]);
-          } else if (typeof field === 'object') {
+          } else if (typeof field === "object") {
             Object.keys(field).forEach((key: string) => {
               checkNotEmpty(sample[key]);
-              field[key].forEach((subField: string) => checkNotEmpty(sample[key][subField]));
+              field[key].forEach((subField: string) =>
+                checkNotEmpty(sample[key][subField])
+              );
             });
           }
         });
@@ -177,13 +179,13 @@ describe('StatsMonitor', () => {
       clock.tick(1050);
     });
 
-    it('Should emit average volume in the last second', (done) => {
+    it("Should emit average volume in the last second", (done) => {
       getRTCStats = () => Promise.resolve(stats);
       monitor = new StatsMonitor({ getRTCStats, Mos });
       monitor.addVolumes(100, 150);
       monitor.addVolumes(200, 250);
       monitor.addVolumes(300, 350);
-      monitor.on('sample', (sample: any) => {
+      monitor.on("sample", (sample: any) => {
         assert.equal(sample.audioInputLevel, 200);
         assert.equal(sample.audioOutputLevel, 250);
         done();
@@ -193,13 +195,13 @@ describe('StatsMonitor', () => {
       clock.tick(1050);
     });
 
-    it('Should not use previously emitted volumes when averaging', (done) => {
+    it("Should not use previously emitted volumes when averaging", (done) => {
       let sampleCount = 0;
       getRTCStats = () => Promise.resolve(stats);
       monitor = new StatsMonitor({ getRTCStats, Mos });
       monitor.enable({});
 
-      monitor.on('sample', (sample: any) => {
+      monitor.on("sample", (sample: any) => {
         sampleCount++;
         if (sampleCount === 1) {
           assert.equal(sample.audioInputLevel, 200);
@@ -230,7 +232,7 @@ describe('StatsMonitor', () => {
         monitor = new StatsMonitor({ getRTCStats, thresholds });
         monitor.enable({});
 
-        monitor.on('warning', warning => {
+        monitor.on("warning", (warning) => {
           assert.equal(warning.name, STAT_NAME);
           assert.equal(warning.value, thresholds[STAT_NAME].maxDuration);
           done();
@@ -245,7 +247,7 @@ describe('StatsMonitor', () => {
         monitor = new StatsMonitor({ getRTCStats, thresholds });
         monitor.enable({});
 
-        monitor.on('warning', (warning) => {
+        monitor.on("warning", (warning) => {
           console.log(warning);
           onWarning();
         });
@@ -267,7 +269,7 @@ describe('StatsMonitor', () => {
 
     context(`'minStandardDeviation' threshold`, () => {
       it(`Should raise a warning when 'minStandardDeviation' threshold is reached`, () =>
-        new Promise(async resolve => {
+        new Promise(async (resolve) => {
           const statsMonitor = new StatsMonitor({
             getRTCStats: async () => ({}),
             thresholds: { audioInputLevel: { maxDuration: 2, sampleCount: 2 } },
@@ -275,9 +277,9 @@ describe('StatsMonitor', () => {
 
           statsMonitor.enable({});
 
-          statsMonitor.on('warning', warning => {
-            assert.equal(warning.name, 'audioInputLevel');
-            resolve();
+          statsMonitor.on("warning", (warning) => {
+            assert.equal(warning.name, "audioInputLevel");
+            resolve(undefined);
           });
 
           for (const volume of [10, 10, 10, 10, 10]) {
@@ -294,61 +296,63 @@ describe('StatsMonitor', () => {
             statsMonitor.addVolumes(volume, volume);
           }
           await clock.tickAsync(1000);
-        }),
-      );
+        }));
 
-      it(
-        `Should NOT raise warning when 'maxDuration' threshold is reached but with different stat values`,
-        async () => {
-          const statsMonitor = new StatsMonitor({
-            getRTCStats: async () => ({}),
-            thresholds: { audioInputLevel: { maxDuration: 2, sampleCount: 2 } },
-          });
+      it(`Should NOT raise warning when 'maxDuration' threshold is reached but with different stat values`, async () => {
+        const statsMonitor = new StatsMonitor({
+          getRTCStats: async () => ({}),
+          thresholds: { audioInputLevel: { maxDuration: 2, sampleCount: 2 } },
+        });
 
-          statsMonitor.enable({});
+        statsMonitor.enable({});
 
-          const warningHandler: sinon.SinonStub = sinon.stub();
-          statsMonitor.on('warning', warningHandler);
+        const warningHandler: sinon.SinonStub = sinon.stub();
+        statsMonitor.on("warning", warningHandler);
 
-          for (const volume of [10, 150, 300, 400, 500]) {
-            statsMonitor.addVolumes(volume, volume);
-          }
-          await clock.tickAsync(1000);
+        for (const volume of [10, 150, 300, 400, 500]) {
+          statsMonitor.addVolumes(volume, volume);
+        }
+        await clock.tickAsync(1000);
 
-          for (const volume of [400, 10, 800, 900, 1000]) {
-            statsMonitor.addVolumes(volume, volume);
-          }
-          await clock.tickAsync(1000);
+        for (const volume of [400, 10, 800, 900, 1000]) {
+          statsMonitor.addVolumes(volume, volume);
+        }
+        await clock.tickAsync(1000);
 
-          for (const volume of [50, 100, 1000, 500, 10]) {
-            statsMonitor.addVolumes(volume, volume);
-          }
-          await clock.tickAsync(1000);
+        for (const volume of [50, 100, 1000, 500, 10]) {
+          statsMonitor.addVolumes(volume, volume);
+        }
+        await clock.tickAsync(1000);
 
-          assert(warningHandler.notCalled);
-        },
-      );
+        assert(warningHandler.notCalled);
+      });
     });
 
     context(`'min' and 'max' thresholds`, () => {
-      [{
-        // Used to go outside max boundary
-        outOfBoundModifier: 1,
-        thresholdName: 'max',
-      }, {
-        // Used to go outside min boundary
-        outOfBoundModifier: -1,
-        thresholdName: 'min',
-      }].forEach((item: any) => {
+      [
+        {
+          // Used to go outside max boundary
+          outOfBoundModifier: 1,
+          thresholdName: "max",
+        },
+        {
+          // Used to go outside min boundary
+          outOfBoundModifier: -1,
+          thresholdName: "min",
+        },
+      ].forEach((item: any) => {
         it(`Should raise warning when '${item.thresholdName}' threshold is reached`, (done) => {
-          stats[STAT_NAME] = thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
+          stats[STAT_NAME] =
+            thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
           monitor = new StatsMonitor({ getRTCStats, thresholds });
           monitor.enable({});
 
-          monitor.on('warning', warning => {
+          monitor.on("warning", (warning) => {
             assert.equal(warning.name, STAT_NAME);
             assert.equal(warning.values.length, SAMPLE_COUNT_RAISE);
-            warning.values.forEach((v: number) => assert.equal(stats[STAT_NAME], v));
+            warning.values.forEach((v: number) =>
+              assert.equal(stats[STAT_NAME], v)
+            );
             done();
           });
 
@@ -361,7 +365,7 @@ describe('StatsMonitor', () => {
           monitor = new StatsMonitor({ getRTCStats, thresholds });
           monitor.enable({});
 
-          monitor.on('warning', onWarning);
+          monitor.on("warning", onWarning);
 
           clock.tick(SAMPLE_COUNT_RAISE * 1000);
           clock.restore();
@@ -371,11 +375,12 @@ describe('StatsMonitor', () => {
 
         it(`Should NOT raise warning when '${item.thresholdName}' raise count is NOT reached`, () => {
           const onWarning = sinon.stub();
-          stats[STAT_NAME] = thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
+          stats[STAT_NAME] =
+            thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
           monitor = new StatsMonitor({ getRTCStats, thresholds });
           monitor.enable({});
 
-          monitor.on('warning', onWarning);
+          monitor.on("warning", onWarning);
 
           clock.tick((SAMPLE_COUNT_RAISE - 1) * 1000);
           clock.restore();
@@ -386,11 +391,12 @@ describe('StatsMonitor', () => {
         it(`Should use raise count parameter if passed in ('${item.thresholdName}' threshold)`, () => {
           const onWarning = sinon.stub();
           thresholds[STAT_NAME].raiseCount = SAMPLE_COUNT_RAISE - 1;
-          stats[STAT_NAME] = thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
+          stats[STAT_NAME] =
+            thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
           monitor = new StatsMonitor({ getRTCStats, thresholds });
           monitor.enable({});
 
-          monitor.on('warning', onWarning);
+          monitor.on("warning", onWarning);
 
           clock.tick((SAMPLE_COUNT_RAISE - 1) * 1000);
           clock.restore();
@@ -402,11 +408,12 @@ describe('StatsMonitor', () => {
           const onWarning = sinon.stub();
           thresholds[STAT_NAME].sampleCount = 3;
           thresholds[STAT_NAME].raiseCount = 4;
-          stats[STAT_NAME] = thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
+          stats[STAT_NAME] =
+            thresholds[STAT_NAME][item.thresholdName] + item.outOfBoundModifier;
           monitor = new StatsMonitor({ getRTCStats, thresholds });
           monitor.enable({});
 
-          monitor.on('warning', onWarning);
+          monitor.on("warning", onWarning);
 
           clock.tick(4000);
           clock.restore();
@@ -418,7 +425,7 @@ describe('StatsMonitor', () => {
 
     context(`'average' thresholds`, () => {
       context(`max`, () => {
-        it('should raise warning when the average threshold is reached', async () => {
+        it("should raise warning when the average threshold is reached", async () => {
           const onWarning = sinon.stub();
 
           stats[STAT_NAME] = 0;
@@ -428,15 +435,15 @@ describe('StatsMonitor', () => {
           });
 
           const sampleCount = 7;
-          statsMonitor['_thresholds'] = {
+          statsMonitor["_thresholds"] = {
             [STAT_NAME]: { maxAverage: 3, clearValue: 1, sampleCount },
           };
 
-          statsMonitor.on('warning', onWarning);
+          statsMonitor.on("warning", onWarning);
 
           statsMonitor.enable({});
 
-          for(let a = 0; a < sampleCount; a++) {
+          for (let a = 0; a < sampleCount; a++) {
             await clock.tickAsync(1000);
             stats[STAT_NAME] += 10;
           }
@@ -447,13 +454,13 @@ describe('StatsMonitor', () => {
             const data = onWarning.args[0][0];
             sinon.assert.calledOnce(onWarning);
             assert.equal(data.name, STAT_NAME);
-            assert.deepEqual(data.threshold, { name: 'maxAverage', value: 3 });
+            assert.deepEqual(data.threshold, { name: "maxAverage", value: 3 });
             assert.deepEqual(data.values, [0, 10, 20, 30, 40, 50, 60]);
             assert(!!data.samples);
           });
         });
 
-        it('should clear warning when the average-clear threshold is reached', async () => {
+        it("should clear warning when the average-clear threshold is reached", async () => {
           const onWarning = sinon.stub();
           const onWarningCleared = sinon.stub();
 
@@ -464,16 +471,16 @@ describe('StatsMonitor', () => {
           });
 
           const sampleCount = 7;
-          statsMonitor['_thresholds'] = {
+          statsMonitor["_thresholds"] = {
             [STAT_NAME]: { maxAverage: 3, clearValue: 1, sampleCount },
           };
 
-          statsMonitor.on('warning', onWarning);
-          statsMonitor.on('warning-cleared', onWarningCleared);
+          statsMonitor.on("warning", onWarning);
+          statsMonitor.on("warning-cleared", onWarningCleared);
 
           statsMonitor.enable({});
 
-          for(let a = 0; a < sampleCount; a++) {
+          for (let a = 0; a < sampleCount; a++) {
             await clock.tickAsync(1000);
             stats[STAT_NAME] += 10;
           }
@@ -488,7 +495,7 @@ describe('StatsMonitor', () => {
             sinon.assert.calledOnce(onWarning);
             sinon.assert.calledOnce(onWarningCleared);
             assert.equal(data.name, STAT_NAME);
-            assert.deepEqual(data.threshold, { name: 'maxAverage', value: 3 });
+            assert.deepEqual(data.threshold, { name: "maxAverage", value: 3 });
             assert.deepEqual(data.values, [0, 10, 20, 30, 40, 50, 60]);
             assert(!!data.samples);
           });
@@ -496,8 +503,8 @@ describe('StatsMonitor', () => {
       });
     });
 
-    context('multiple thresholds', () => {
-      it('should raise the appropriate warning if reached', async () => {
+    context("multiple thresholds", () => {
+      it("should raise the appropriate warning if reached", async () => {
         const onWarning = sinon.stub();
 
         const mockRTCStats = {
@@ -507,17 +514,20 @@ describe('StatsMonitor', () => {
         const statsMonitor = new StatsMonitor({
           getRTCStats: async () => mockRTCStats,
           thresholds: {
-            [STAT_NAME]: [{
-              max: 1,
-            }, {
-              clearValue: 1,
-              maxAverage: 3,
-              sampleCount: 7,
-            }],
+            [STAT_NAME]: [
+              {
+                max: 1,
+              },
+              {
+                clearValue: 1,
+                maxAverage: 3,
+                sampleCount: 7,
+              },
+            ],
           } as any,
         });
 
-        statsMonitor.on('warning', onWarning);
+        statsMonitor.on("warning", onWarning);
 
         statsMonitor.enable({});
 
@@ -527,22 +537,25 @@ describe('StatsMonitor', () => {
 
         await wait().then(() => {
           sinon.assert.calledOnce(onWarning);
-          assert.deepEqual({
-            ...onWarning.args[0][0],
-            samples: null,
-          }, {
-            name: STAT_NAME,
-            samples: null,
-            threshold: {
-              name: 'max',
-              value: 1,
+          assert.deepEqual(
+            {
+              ...onWarning.args[0][0],
+              samples: null,
             },
-            values: [2, 2, 2],
-          });
+            {
+              name: STAT_NAME,
+              samples: null,
+              threshold: {
+                name: "max",
+                value: 1,
+              },
+              values: [2, 2, 2],
+            }
+          );
         });
       });
 
-      it('should raise all warnings when reached', async () => {
+      it("should raise all warnings when reached", async () => {
         const onWarning = sinon.stub();
 
         const mockRTCStats = {
@@ -552,17 +565,20 @@ describe('StatsMonitor', () => {
         const statsMonitor = new StatsMonitor({
           getRTCStats: async () => mockRTCStats,
           thresholds: {
-            [STAT_NAME]: [{
-              max: 1,
-            }, {
-              clearValue: 1,
-              maxAverage: 3,
-              sampleCount: 7,
-            }],
+            [STAT_NAME]: [
+              {
+                max: 1,
+              },
+              {
+                clearValue: 1,
+                maxAverage: 3,
+                sampleCount: 7,
+              },
+            ],
           } as any,
         });
 
-        statsMonitor.on('warning', onWarning);
+        statsMonitor.on("warning", onWarning);
 
         statsMonitor.enable({});
 
@@ -575,22 +591,25 @@ describe('StatsMonitor', () => {
 
           const data = onWarning.args[1][0];
           assert.equal(data.name, STAT_NAME);
-          assert.deepEqual(data.threshold, { name: 'maxAverage', value: 3 });
+          assert.deepEqual(data.threshold, { name: "maxAverage", value: 3 });
           assert.deepEqual(data.values, [5, 5, 5, 5, 5, 5, 5]);
           assert(!!data.samples);
 
-          assert.deepEqual({
-            ...onWarning.args[0][0],
-            samples: null,
-          }, {
-            name: STAT_NAME,
-            samples: null,
-            threshold: {
-              name: 'max',
-              value: 1,
+          assert.deepEqual(
+            {
+              ...onWarning.args[0][0],
+              samples: null,
             },
-            values: [5, 5, 5],
-          });
+            {
+              name: STAT_NAME,
+              samples: null,
+              threshold: {
+                name: "max",
+                value: 1,
+              },
+              values: [5, 5, 5],
+            }
+          );
         });
       });
     });
@@ -603,8 +622,8 @@ describe('StatsMonitor', () => {
 
       getRTCStats = () => Promise.reject({});
       monitor = new StatsMonitor({ getRTCStats });
-      monitor.on('sample', onSample);
-      monitor.on('error', onError);
+      monitor.on("sample", onSample);
+      monitor.on("error", onError);
       monitor.enable({});
 
       clock.tick(1050);

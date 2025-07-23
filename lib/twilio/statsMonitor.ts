@@ -31,13 +31,16 @@ const DEFAULT_THRESHOLDS: StatsMonitor.ThresholdOptions = {
   bytesSent: { clearCount: 2, min: 1, raiseCount: 3, sampleCount: 3 },
   jitter: { max: 30 },
   mos: { min: 3 },
-  packetsLostFraction: [{
-    max: 1,
-  }, {
-    clearValue: 1,
-    maxAverage: 3,
-    sampleCount: 7,
-  }],
+  packetsLostFraction: [
+    {
+      max: 1,
+    },
+    {
+      clearValue: 1,
+      maxAverage: 3,
+      sampleCount: 7,
+    },
+  ],
   rtt: { max: 400 },
 };
 
@@ -65,7 +68,10 @@ export type IMos = any;
  * @returns The amount of values in which the stat crossed the threshold.
  */
 function countHigh(max: number, values: number[]): number {
-  return values.reduce((highCount, value) => highCount += (value > max) ? 1 : 0, 0);
+  return values.reduce(
+    (highCount, value) => (highCount += value > max ? 1 : 0),
+    0,
+  );
 }
 
 /**
@@ -76,7 +82,10 @@ function countHigh(max: number, values: number[]): number {
  * @returns The amount of values in which the stat crossed the threshold.
  */
 function countLow(min: number, values: number[]): number {
-  return values.reduce((lowCount, value) => lowCount += (value < min) ? 1 : 0, 0);
+  return values.reduce(
+    (lowCount, value) => (lowCount += value < min ? 1 : 0),
+    0,
+  );
 }
 
 /**
@@ -90,19 +99,22 @@ function calculateStandardDeviation(values: number[]): number | null {
     return null;
   }
 
-  const valueAverage: number = values.reduce(
-    (partialSum: number, value: number) => partialSum + value,
-    0,
-  ) / values.length;
+  const valueAverage: number =
+    values.reduce(
+      (partialSum: number, value: number) => partialSum + value,
+      0,
+    ) / values.length;
 
-  const diffSquared: number[] = values.map(
-    (value: number) => Math.pow(value - valueAverage, 2),
+  const diffSquared: number[] = values.map((value: number) =>
+    Math.pow(value - valueAverage, 2),
   );
 
-  const stdDev: number = Math.sqrt(diffSquared.reduce(
-    (partialSum: number, value: number) => partialSum + value,
-    0,
-  ) / diffSquared.length);
+  const stdDev: number = Math.sqrt(
+    diffSquared.reduce(
+      (partialSum: number, value: number) => partialSum + value,
+      0,
+    ) / diffSquared.length,
+  );
 
   return stdDev;
 }
@@ -126,7 +138,8 @@ class StatsMonitor extends EventEmitter {
   /**
    * A map of warnings with their raised time
    */
-  private _activeWarnings: Map<string, StatsMonitor.WarningTimestamp> = new Map();
+  private _activeWarnings: Map<string, StatsMonitor.WarningTimestamp> =
+    new Map();
 
   /**
    * A map of stats with the number of exceeded thresholds
@@ -171,7 +184,7 @@ class StatsMonitor extends EventEmitter {
   /**
    * The setInterval id for fetching samples.
    */
-  private _sampleInterval: NodeJS.Timer;
+  private _sampleInterval?: NodeJS.Timer;
 
   /**
    * Keeps track of supplemental sample values.
@@ -205,13 +218,16 @@ class StatsMonitor extends EventEmitter {
     this._getRTCStats = options.getRTCStats || getRTCStats;
     this._mos = options.Mos || Mos;
     this._peerConnection = options.peerConnection;
-    this._thresholds = {...DEFAULT_THRESHOLDS, ...options.thresholds};
+    this._thresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
 
     const thresholdSampleCounts = Object.values(this._thresholds)
       .map((threshold: StatsMonitor.ThresholdOptions) => threshold.sampleCount)
       .filter((sampleCount: number | undefined) => !!sampleCount);
 
-    this._maxSampleCount = Math.max(SAMPLE_COUNT_METRICS, ...thresholdSampleCounts);
+    this._maxSampleCount = Math.max(
+      SAMPLE_COUNT_METRICS,
+      ...thresholdSampleCounts,
+    );
 
     if (this._peerConnection) {
       this.enable(this._peerConnection);
@@ -233,7 +249,9 @@ class StatsMonitor extends EventEmitter {
    * @returns The current {@link StatsMonitor}.
    */
   disable(): this {
-    clearInterval(this._sampleInterval);
+    if (this._sampleInterval) {
+      clearInterval(this._sampleInterval);
+    }
     delete this._sampleInterval;
 
     return this;
@@ -260,16 +278,21 @@ class StatsMonitor extends EventEmitter {
   enable(peerConnection: IPeerConnection): this {
     if (peerConnection) {
       if (this._peerConnection && peerConnection !== this._peerConnection) {
-        throw new InvalidArgumentError('Attempted to replace an existing PeerConnection in StatsMonitor.enable');
+        throw new InvalidArgumentError(
+          'Attempted to replace an existing PeerConnection in StatsMonitor.enable',
+        );
       }
       this._peerConnection = peerConnection;
     }
 
     if (!this._peerConnection) {
-      throw new InvalidArgumentError('Can not enable StatsMonitor without a PeerConnection');
+      throw new InvalidArgumentError(
+        'Can not enable StatsMonitor without a PeerConnection',
+      );
     }
 
-    this._sampleInterval = this._sampleInterval ||
+    this._sampleInterval =
+      this._sampleInterval ||
       setInterval(this._fetchSample.bind(this), SAMPLE_INTERVAL);
 
     return this;
@@ -316,11 +339,20 @@ class StatsMonitor extends EventEmitter {
    * @param thresholdName - The name of the threshold to clear
    * @param [data] - Any relevant sample data.
    */
-  private _clearWarning(statName: string, thresholdName: string, data?: RTCWarning): void {
+  private _clearWarning(
+    statName: string,
+    thresholdName: string,
+    data?: RTCWarning,
+  ): void {
     const warningId = `${statName}:${thresholdName}`;
     const activeWarning = this._activeWarnings.get(warningId);
 
-    if (!activeWarning || Date.now() - activeWarning.timeRaised < WARNING_TIMEOUT) { return; }
+    if (
+      !activeWarning ||
+      Date.now() - activeWarning.timeRaised < WARNING_TIMEOUT
+    ) {
+      return;
+    }
     this._activeWarnings.delete(warningId);
 
     this.emit('warning-cleared', {
@@ -339,33 +371,51 @@ class StatsMonitor extends EventEmitter {
    * @param [previousSample=null] - The previous sample to use to calculate deltas.
    * @returns A universally-formatted version of RTC stats.
    */
-  private _createSample(stats: IRTCStats, previousSample: RTCSample | null): RTCSample {
-    const previousBytesSent = previousSample && previousSample.totals.bytesSent || 0;
-    const previousBytesReceived = previousSample && previousSample.totals.bytesReceived || 0;
-    const previousPacketsSent = previousSample && previousSample.totals.packetsSent || 0;
-    const previousPacketsReceived = previousSample && previousSample.totals.packetsReceived || 0;
-    const previousPacketsLost = previousSample && previousSample.totals.packetsLost || 0;
+  private _createSample(
+    stats: IRTCStats,
+    previousSample: RTCSample | null,
+  ): RTCSample {
+    const previousBytesSent =
+      (previousSample && previousSample.totals.bytesSent) || 0;
+    const previousBytesReceived =
+      (previousSample && previousSample.totals.bytesReceived) || 0;
+    const previousPacketsSent =
+      (previousSample && previousSample.totals.packetsSent) || 0;
+    const previousPacketsReceived =
+      (previousSample && previousSample.totals.packetsReceived) || 0;
+    const previousPacketsLost =
+      (previousSample && previousSample.totals.packetsLost) || 0;
 
     const currentBytesSent = stats.bytesSent - previousBytesSent;
     const currentBytesReceived = stats.bytesReceived - previousBytesReceived;
     const currentPacketsSent = stats.packetsSent - previousPacketsSent;
-    const currentPacketsReceived = stats.packetsReceived - previousPacketsReceived;
+    const currentPacketsReceived =
+      stats.packetsReceived - previousPacketsReceived;
     const currentPacketsLost = stats.packetsLost - previousPacketsLost;
     const currentInboundPackets = currentPacketsReceived + currentPacketsLost;
-    const currentPacketsLostFraction = (currentInboundPackets > 0) ?
-      (currentPacketsLost / currentInboundPackets) * 100 : 0;
+    const currentPacketsLostFraction =
+      currentInboundPackets > 0
+        ? (currentPacketsLost / currentInboundPackets) * 100
+        : 0;
 
     const totalInboundPackets = stats.packetsReceived + stats.packetsLost;
-    const totalPacketsLostFraction = (totalInboundPackets > 0) ?
-      (stats.packetsLost / totalInboundPackets) * 100 : 100;
+    const totalPacketsLostFraction =
+      totalInboundPackets > 0
+        ? (stats.packetsLost / totalInboundPackets) * 100
+        : 100;
 
-    const rttValue = (typeof stats.rtt === 'number' || !previousSample) ? stats.rtt : previousSample.rtt;
+    const rttValue =
+      typeof stats.rtt === 'number' || !previousSample
+        ? stats.rtt
+        : previousSample.rtt;
 
     const audioInputLevelValues = this._inputVolumes.splice(0);
     this._supplementalSampleBuffers.audioInputLevel.push(audioInputLevelValues);
 
     const audioOutputLevelValues = this._outputVolumes.splice(0);
-    this._supplementalSampleBuffers.audioOutputLevel.push(audioOutputLevelValues);
+    this._supplementalSampleBuffers.audioOutputLevel.push(
+      audioOutputLevelValues,
+    );
 
     return {
       audioInputLevel: Math.round(average(audioInputLevelValues)),
@@ -374,7 +424,11 @@ class StatsMonitor extends EventEmitter {
       bytesSent: currentBytesSent,
       codecName: stats.codecName,
       jitter: stats.jitter,
-      mos: this._mos.calculate(rttValue, stats.jitter, previousSample && currentPacketsLostFraction),
+      mos: this._mos.calculate(
+        rttValue,
+        stats.jitter,
+        previousSample && currentPacketsLostFraction,
+      ),
       packetsLost: currentPacketsLost,
       packetsLostFraction: currentPacketsLostFraction,
       packetsReceived: currentPacketsReceived,
@@ -396,16 +450,18 @@ class StatsMonitor extends EventEmitter {
    * Get stats from the PeerConnection and add it to our list of samples.
    */
   private _fetchSample(): void {
-    this._getSample().then(sample => {
-      this._addSample(sample);
-      this._raiseWarnings();
-      this.emit('sample', sample);
-    }).catch(error => {
-      this.disable();
-      // We only bubble up any errors coming from pc.getStats()
-      // No need to attach a twilioError
-      this.emit('error', error);
-    });
+    this._getSample()
+      .then((sample) => {
+        this._addSample(sample);
+        this._raiseWarnings();
+        this.emit('sample', sample);
+      })
+      .catch((error) => {
+        this.disable();
+        // We only bubble up any errors coming from pc.getStats()
+        // No need to attach a twilioError
+        this.emit('error', error);
+      });
   }
 
   /**
@@ -429,21 +485,31 @@ class StatsMonitor extends EventEmitter {
    * @param thresholdName - The name of the threshold to raise
    * @param [data] - Any relevant sample data.
    */
-  private _raiseWarning(statName: string, thresholdName: string, data?: RTCWarning): void {
+  private _raiseWarning(
+    statName: string,
+    thresholdName: string,
+    data?: RTCWarning,
+  ): void {
     const warningId = `${statName}:${thresholdName}`;
 
-    if (this._activeWarnings.has(warningId)) { return; }
+    if (this._activeWarnings.has(warningId)) {
+      return;
+    }
     this._activeWarnings.set(warningId, { timeRaised: Date.now() });
 
-    const thresholds: StatsMonitor.ThresholdOption | StatsMonitor.ThresholdOption[] =
-      this._thresholds[statName];
+    const thresholds:
+      | StatsMonitor.ThresholdOption
+      | StatsMonitor.ThresholdOption[] = this._thresholds[statName];
 
     let thresholdValue;
 
     if (Array.isArray(thresholds)) {
-      const foundThreshold = thresholds.find(threshold => thresholdName in threshold);
+      const foundThreshold = thresholds.find(
+        (threshold) => thresholdName in threshold,
+      );
       if (foundThreshold) {
-        thresholdValue = foundThreshold[thresholdName as keyof StatsMonitor.ThresholdOption];
+        thresholdValue =
+          foundThreshold[thresholdName as keyof StatsMonitor.ThresholdOption];
       }
     } else {
       thresholdValue = this._thresholds[statName][thresholdName];
@@ -463,9 +529,13 @@ class StatsMonitor extends EventEmitter {
    * Apply our thresholds to our array of RTCStat samples.
    */
   private _raiseWarnings(): void {
-    if (!this._warningsEnabled) { return; }
+    if (!this._warningsEnabled) {
+      return;
+    }
 
-    Object.keys(this._thresholds).forEach(name => this._raiseWarningsForStat(name));
+    Object.keys(this._thresholds).forEach((name) =>
+      this._raiseWarningsForStat(name),
+    );
   }
 
   /**
@@ -474,10 +544,11 @@ class StatsMonitor extends EventEmitter {
    * @param statName - Name of the stat to compare.
    */
   private _raiseWarningsForStat(statName: string): void {
-    const limits: StatsMonitor.ThresholdOptions[] =
-      Array.isArray(this._thresholds[statName])
-        ? this._thresholds[statName]
-        : [this._thresholds[statName]];
+    const limits: StatsMonitor.ThresholdOptions[] = Array.isArray(
+      this._thresholds[statName],
+    )
+      ? this._thresholds[statName]
+      : [this._thresholds[statName]];
 
     limits.forEach((limit: StatsMonitor.ThresholdOptions) => {
       const samples = this._sampleBuffer;
@@ -487,11 +558,13 @@ class StatsMonitor extends EventEmitter {
       const sampleCount = limit.sampleCount || this._maxSampleCount;
 
       let relevantSamples = samples.slice(-sampleCount);
-      const values = relevantSamples.map(sample => sample[statName]);
+      const values = relevantSamples.map((sample) => sample[statName]);
 
       // (rrowland) If we have a bad or missing value in the set, we don't
       // have enough information to throw or clear a warning. Bail out.
-      const containsNull = values.some(value => typeof value === 'undefined' || value === null);
+      const containsNull = values.some(
+        (value) => typeof value === 'undefined' || value === null,
+      );
 
       if (containsNull) {
         return;
@@ -501,18 +574,30 @@ class StatsMonitor extends EventEmitter {
       if (typeof limit.max === 'number') {
         count = countHigh(limit.max, values);
         if (count >= raiseCount) {
-          this._raiseWarning(statName, 'max', { values, samples: relevantSamples });
+          this._raiseWarning(statName, 'max', {
+            samples: relevantSamples,
+            values,
+          });
         } else if (count <= clearCount) {
-          this._clearWarning(statName, 'max', { values, samples: relevantSamples });
+          this._clearWarning(statName, 'max', {
+            samples: relevantSamples,
+            values,
+          });
         }
       }
 
       if (typeof limit.min === 'number') {
         count = countLow(limit.min, values);
         if (count >= raiseCount) {
-          this._raiseWarning(statName, 'min', { values, samples: relevantSamples });
+          this._raiseWarning(statName, 'min', {
+            samples: relevantSamples,
+            values,
+          });
         } else if (count <= clearCount) {
-          this._clearWarning(statName, 'min', { values, samples: relevantSamples });
+          this._clearWarning(statName, 'min', {
+            samples: relevantSamples,
+            values,
+          });
         }
       }
 
@@ -522,7 +607,7 @@ class StatsMonitor extends EventEmitter {
         const curValue = relevantSamples[1][statName];
 
         const prevStreak = this._currentStreaks.get(statName) || 0;
-        const streak = (prevValue === curValue) ? prevStreak + 1 : 0;
+        const streak = prevValue === curValue ? prevStreak + 1 : 0;
 
         this._currentStreaks.set(statName, streak);
 
@@ -534,14 +619,17 @@ class StatsMonitor extends EventEmitter {
       }
 
       if (typeof limit.minStandardDeviation === 'number') {
-        const sampleSets: number[][] = this._supplementalSampleBuffers[statName];
+        const sampleSets: number[][] =
+          this._supplementalSampleBuffers[statName];
         if (!sampleSets || sampleSets.length < limit.sampleCount) {
           return;
         }
         if (sampleSets.length > limit.sampleCount) {
           sampleSets.splice(0, sampleSets.length - limit.sampleCount);
         }
-        const flatSamples: number[] = flattenSamples(sampleSets.slice(-sampleCount));
+        const flatSamples: number[] = flattenSamples(
+          sampleSets.slice(-sampleCount),
+        );
         const stdDev: number | null = calculateStandardDeviation(flatSamples);
 
         if (typeof stdDev !== 'number') {
@@ -549,23 +637,40 @@ class StatsMonitor extends EventEmitter {
         }
 
         if (stdDev < limit.minStandardDeviation) {
-          this._raiseWarning(statName, 'minStandardDeviation', { value: stdDev });
+          this._raiseWarning(statName, 'minStandardDeviation', {
+            value: stdDev,
+          });
         } else {
-          this._clearWarning(statName, 'minStandardDeviation', { value: stdDev });
+          this._clearWarning(statName, 'minStandardDeviation', {
+            value: stdDev,
+          });
         }
       }
 
-      ([
-        ['maxAverage', (x: number, y: number) => x > y],
-        ['minAverage', (x: number, y: number) => x < y],
-      ] as const).forEach(([thresholdName, comparator]) => {
-        if (typeof limit[thresholdName] === 'number' && values.length >= sampleCount) {
+      (
+        [
+          ['maxAverage', (x: number, y: number) => x > y],
+          ['minAverage', (x: number, y: number) => x < y],
+        ] as const
+      ).forEach(([thresholdName, comparator]) => {
+        if (
+          typeof limit[thresholdName] === 'number' &&
+          values.length >= sampleCount
+        ) {
           const avg: number = average(values);
 
           if (comparator(avg, limit[thresholdName])) {
-            this._raiseWarning(statName, thresholdName, { values, samples: relevantSamples });
-          } else if (!comparator(avg, limit.clearValue || limit[thresholdName])) {
-            this._clearWarning(statName, thresholdName, { values, samples: relevantSamples });
+            this._raiseWarning(statName, thresholdName, {
+              samples: relevantSamples,
+              values,
+            });
+          } else if (
+            !comparator(avg, limit.clearValue || limit[thresholdName])
+          ) {
+            this._clearWarning(statName, thresholdName, {
+              samples: relevantSamples,
+              values,
+            });
           }
         }
       });

@@ -8,11 +8,9 @@ import { EventEmitter } from 'events';
 import Connection from '../connection';
 import Device from '../device';
 import { NotSupportedError } from '../errors';
-import { RTCSampleTotals } from '../rtc/sample';
-import RTCSample from '../rtc/sample';
+import RTCSample, { RTCSampleTotals } from '../rtc/sample';
 import { getRTCIceCandidateStatsReport } from '../rtc/stats';
 import RTCWarning from '../rtc/warning';
-import StatsMonitor from '../statsMonitor';
 import { NetworkTiming, TimeMeasurement } from './timing';
 
 const { COWBELL_AUDIO_URL, ECHO_TEST_DURATION } = require('../constants');
@@ -29,7 +27,7 @@ export interface AudioOutput {
   audio: HTMLAudioElement;
 }
 
-export declare interface PreflightTest {
+export interface PreflightTestEvents {
   /**
    * Raised when [[PreflightTest.status]] has transitioned to [[PreflightTest.Status.Completed]].
    * During this time, [[PreflightTest.report]] is available and ready to be inspected.
@@ -56,7 +54,7 @@ export declare interface PreflightTest {
    * @example `preflight.on('failed', error => console.log(error))`
    * @event
    */
-  failedEvent(error: Device.Error | DOMError): void;
+  failedEvent(error: Device.Error | DOMException): void;
 
   /**
    * Raised when the [[Connection]] gets a webrtc sample object. This event is published every second.
@@ -74,10 +72,6 @@ export declare interface PreflightTest {
    */
   warningEvent(name: string, data: PreflightTest.Warning): void;
 }
-
-/**
- * Runs some tests to identify issues, if any, prohibiting successful calling.
- */
 export class PreflightTest extends EventEmitter {
   /**
    * Callsid generated for this test call
@@ -188,8 +182,9 @@ export class PreflightTest extends EventEmitter {
 
     this._initDevice(token, {
       ...this._options,
-      fileInputStream: this._options.fakeMicInput ?
-        this._getStreamFromFile() : undefined,
+      fileInputStream: this._options.fakeMicInput
+        ? this._getStreamFromFile()
+        : undefined,
     });
   }
 
@@ -212,7 +207,11 @@ export class PreflightTest extends EventEmitter {
   /**
    * Emit a {PreflightTest.Warning}
    */
-  private _emitWarning(name: string, description: string, rtcWarning?: RTCWarning): void {
+  private _emitWarning(
+    name: string,
+    description: string,
+    rtcWarning?: RTCWarning,
+  ): void {
     const warning: PreflightTest.Warning = { name, description };
     if (rtcWarning) {
       warning.rtcWarning = rtcWarning;
@@ -246,7 +245,7 @@ export class PreflightTest extends EventEmitter {
     const testTiming: TimeMeasurement = { start: this._startTime };
     if (this._endTime) {
       testTiming.end = this._endTime;
-      testTiming.duration  = this._endTime - this._startTime;
+      testTiming.duration = this._endTime - this._startTime;
     }
 
     const report: PreflightTest.Report = {
@@ -262,12 +261,15 @@ export class PreflightTest extends EventEmitter {
       warnings: this._warnings,
     };
 
-    const selectedIceCandidatePairStats = this._rtcIceCandidateStatsReport.selectedIceCandidatePairStats;
+    const selectedIceCandidatePairStats =
+      this._rtcIceCandidateStatsReport.selectedIceCandidatePairStats;
 
     if (selectedIceCandidatePairStats) {
       report.selectedIceCandidatePairStats = selectedIceCandidatePairStats;
-      report.isTurnRequired = selectedIceCandidatePairStats.localCandidate.candidateType === 'relay'
-      || selectedIceCandidatePairStats.remoteCandidate.candidateType === 'relay';
+      report.isTurnRequired =
+        selectedIceCandidatePairStats.localCandidate.candidateType ===
+          'relay' ||
+        selectedIceCandidatePairStats.remoteCandidate.candidateType === 'relay';
     }
 
     if (stats) {
@@ -293,23 +295,26 @@ export class PreflightTest extends EventEmitter {
    */
   private _getRTCStats(): PreflightTest.RTCStats | undefined {
     const firstMosSampleIdx = this._samples.findIndex(
-      sample => typeof sample.mos === 'number' && sample.mos > 0,
+      (sample) => typeof sample.mos === 'number' && sample.mos > 0,
     );
 
-    const samples = firstMosSampleIdx >= 0
-      ? this._samples.slice(firstMosSampleIdx)
-      : [];
+    const samples =
+      firstMosSampleIdx >= 0 ? this._samples.slice(firstMosSampleIdx) : [];
 
     if (!samples || !samples.length) {
       return;
     }
 
     return ['jitter', 'mos', 'rtt'].reduce((statObj, stat) => {
-      const values = samples.map(s => s[stat]);
+      const values = samples.map((s) => s[stat]);
       return {
         ...statObj,
         [stat]: {
-          average: Number((values.reduce((total, value) => total + value) / values.length).toPrecision(5)),
+          average: Number(
+            (
+              values.reduce((total, value) => total + value) / values.length
+            ).toPrecision(5),
+          ),
           max: Math.max(...values),
           min: Math.min(...values),
         },
@@ -323,7 +328,9 @@ export class PreflightTest extends EventEmitter {
   private _getStreamFromFile(): MediaStream {
     const audioContext = this._options.audioContext;
     if (!audioContext) {
-      throw new NotSupportedError('Cannot fake input audio stream: AudioContext is not supported by this browser.');
+      throw new NotSupportedError(
+        'Cannot fake input audio stream: AudioContext is not supported by this browser.',
+      );
     }
 
     const audioEl: any = new Audio(COWBELL_AUDIO_URL);
@@ -343,7 +350,10 @@ export class PreflightTest extends EventEmitter {
   /**
    * Initialize the device
    */
-  private _initDevice(token: string, options: PreflightTest.ExtendedOptions): void {
+  private _initDevice(
+    token: string,
+    options: PreflightTest.ExtendedOptions,
+  ): void {
     try {
       this._device = new (options.deviceFactory || Device)(token, {
         codecPreferences: options.codecPreferences,
@@ -400,7 +410,10 @@ export class PreflightTest extends EventEmitter {
 
     this._edge = this._device.edge || undefined;
     if (this._options.fakeMicInput) {
-      this._echoTimer = setTimeout(() => this._device.disconnectAll(), ECHO_TEST_DURATION);
+      this._echoTimer = setTimeout(
+        () => this._device.disconnectAll(),
+        ECHO_TEST_DURATION,
+      );
 
       const audio = this._device.audio as any;
       if (audio) {
@@ -417,8 +430,10 @@ export class PreflightTest extends EventEmitter {
     const publisher = this._connection['_publisher'] as any;
     publisher.on('error', () => {
       if (!this._hasInsightsErrored) {
-        this._emitWarning('insights-connection-error',
-          'Received an error when attempting to connect to Insights gateway');
+        this._emitWarning(
+          'insights-connection-error',
+          'Received an error when attempting to connect to Insights gateway',
+        );
       }
       this._hasInsightsErrored = true;
     });
@@ -428,7 +443,7 @@ export class PreflightTest extends EventEmitter {
    * Called when there is a fatal error
    * @param error
    */
-  private _onFailed(error: Device.Error | DOMError): void {
+  private _onFailed(error: Device.Error | DOMException): void {
     clearTimeout(this._echoTimer);
     clearTimeout(this._signalingTimeoutTimer);
     this._releaseHandlers();
@@ -467,7 +482,9 @@ export class PreflightTest extends EventEmitter {
   private _releaseHandlers(): void {
     [this._device, this._connection].forEach((emitter: EventEmitter) => {
       if (emitter) {
-        emitter.eventNames().forEach((name: string) => emitter.removeAllListeners(name));
+        emitter
+          .eventNames()
+          .forEach((name: string) => emitter.removeAllListeners(name));
       }
     });
   }
@@ -481,13 +498,18 @@ export class PreflightTest extends EventEmitter {
       // When volume events start emitting, it means all audio outputs have been created.
       // Let's mute them if we're using fake mic input.
       connection.once('volume', () => {
-        connection.mediaStream.outputs
-          .forEach((output: AudioOutput) => output.audio.muted = true);
+        connection.mediaStream.outputs.forEach(
+          (output: AudioOutput) => (output.audio.muted = true),
+        );
       });
     }
 
     connection.on('warning', (name: string, data: RTCWarning) => {
-      this._emitWarning(name, 'Received an RTCWarning. See .rtcWarning for the RTCWarning', data);
+      this._emitWarning(
+        name,
+        'Received an RTCWarning. See .rtcWarning for the RTCWarning',
+        data,
+      );
     });
 
     connection.once('accept', () => {
@@ -500,7 +522,8 @@ export class PreflightTest extends EventEmitter {
       // RTC Stats are ready. We only need to get ICE candidate stats report once.
       if (!this._latestSample) {
         this._rtcIceCandidateStatsReport = await (
-          this._options.getRTCIceCandidateStatsReport || getRTCIceCandidateStatsReport
+          this._options.getRTCIceCandidateStatsReport ||
+          getRTCIceCandidateStatsReport
         )(connection.mediaStream.version.pc);
       }
 
@@ -511,30 +534,38 @@ export class PreflightTest extends EventEmitter {
 
     // TODO: Update the following once the SDK supports emitting these events
     // Let's shim for now
-    [{
-      reportLabel: 'peerConnection',
-      type: 'pcconnection',
-     }, {
-      reportLabel: 'ice',
-      type: 'iceconnection',
-     }, {
-      reportLabel: 'dtls',
-      type: 'dtlstransport',
-     }, {
-      reportLabel: 'signaling',
-      type: 'signaling',
-     }].forEach(({type, reportLabel}) => {
-
+    [
+      {
+        reportLabel: 'peerConnection',
+        type: 'pcconnection',
+      },
+      {
+        reportLabel: 'ice',
+        type: 'iceconnection',
+      },
+      {
+        reportLabel: 'dtls',
+        type: 'dtlstransport',
+      },
+      {
+        reportLabel: 'signaling',
+        type: 'signaling',
+      },
+    ].forEach(({ type, reportLabel }) => {
       const handlerName = `on${type}statechange`;
       const originalHandler = connection.mediaStream[handlerName];
 
       connection.mediaStream[handlerName] = (state: string) => {
-        const timing = (this._networkTiming as any)[reportLabel]
-          = (this._networkTiming as any)[reportLabel] || { start: 0 };
+        const timing = ((this._networkTiming as any)[reportLabel] = (
+          this._networkTiming as any
+        )[reportLabel] || { start: 0 });
 
         if (state === 'connecting' || state === 'checking') {
           timing.start = Date.now();
-        } else if ((state === 'connected' || state === 'stable') && !timing.duration) {
+        } else if (
+          (state === 'connected' || state === 'stable') &&
+          !timing.duration
+        ) {
           timing.end = Date.now();
           timing.duration = timing.end - timing.start;
         }
@@ -954,4 +985,4 @@ export namespace PreflightTest {
      */
     rtcWarning?: RTCWarning;
   }
- }
+}
