@@ -15,22 +15,18 @@ import {
   InvalidArgumentError,
   InvalidStateError,
   NotSupportedError,
-  SignalingErrors,
   TwilioError,
 } from './errors';
 import Log from './log';
 import { PreflightTest } from './preflight/preflight';
+import type { InboundAudioProcessor } from './public/inboundAudioProcessor';
 import {
   getChunderURIs,
   getRegionShortcode,
   Region,
   regionToEdge,
 } from './regions';
-import {
-  isLegacyEdge,
-  isUnifiedPlanDefault,
-  queryToJson,
-} from './util';
+import { isLegacyEdge, isUnifiedPlanDefault, queryToJson } from './util';
 
 const C = require('./constants');
 const Publisher = require('./eventpublisher');
@@ -176,48 +172,78 @@ class Device extends EventEmitter {
   }
 
   /**
+   * Returns the {@link Edge} value the {@link Device} is currently connected
+   * to. The value will be `null` when the {@link Device} is offline.
+   */
+  get edge(): string | null {
+    return this._edge;
+  }
+
+  /**
    * Which sound file extension is supported.
    * @private
    */
   static get extension(): 'mp3' | 'ogg' {
     // NOTE(mroberts): Node workaround.
-    const a: any = typeof document !== 'undefined'
-      ? document.createElement('audio') : { canPlayType: false };
+    const a: any =
+      typeof document !== 'undefined'
+        ? document.createElement('audio')
+        : { canPlayType: false };
 
     let canPlayMp3;
     try {
-      canPlayMp3 = a.canPlayType && !!a.canPlayType('audio/mpeg').replace(/no/, '');
+      canPlayMp3 =
+        a.canPlayType && !!a.canPlayType('audio/mpeg').replace(/no/, '');
     } catch (e) {
       canPlayMp3 = false;
     }
 
     let canPlayVorbis;
     try {
-      canPlayVorbis = a.canPlayType && !!a.canPlayType('audio/ogg;codecs=\'vorbis\'').replace(/no/, '');
+      canPlayVorbis =
+        a.canPlayType &&
+        !!a.canPlayType('audio/ogg;codecs=\'vorbis\'').replace(/no/, '');
     } catch (e) {
       canPlayVorbis = false;
     }
 
-    return (canPlayVorbis && !canPlayMp3) ? 'ogg' : 'mp3';
+    return canPlayVorbis && !canPlayMp3 ? 'ogg' : 'mp3';
   }
 
   /**
    * Whether or not this SDK is supported by the current browser.
    */
-  static get isSupported(): boolean { return rtc.enabled(); }
+  static get isSupported(): boolean {
+    return rtc.enabled();
+  }
 
   /**
    * Package name of the SDK.
    */
-  static get packageName(): string { return C.PACKAGE_NAME; }
+  static get packageName(): string {
+    return C.PACKAGE_NAME;
+  }
+
+  /**
+   * Current SDK version.
+   */
+  static get version(): string {
+    return C.RELEASE_VERSION;
+  }
 
   /**
    * Run some tests to identify issues, if any, prohibiting successful calling.
    * @param token - A Twilio JWT token string
    * @param options
    */
-  static runPreflight(token: string, options?: PreflightTest.Options): PreflightTest {
-    return new PreflightTest(token, { audioContext: Device._getOrCreateAudioContext(), ...options });
+  static runPreflight(
+    token: string,
+    options?: PreflightTest.Options,
+  ): PreflightTest {
+    return new PreflightTest(token, {
+      audioContext: Device._getOrCreateAudioContext(),
+      ...options,
+    });
   }
 
   /**
@@ -227,11 +253,6 @@ class Device extends EventEmitter {
   static toString(): string {
     return '[Twilio.Device class]';
   }
-
-  /**
-   * Current SDK version.
-   */
-  static get version(): string { return C.RELEASE_VERSION; }
 
   /**
    * An AudioContext to share between {@link Device}s.
@@ -266,7 +287,7 @@ class Device extends EventEmitter {
   /**
    * The AudioHelper instance associated with this {@link Device}.
    */
-  audio: AudioHelper | null = null;
+  audio!: AudioHelper;
 
   /**
    * An array of {@link Connection}s. Though only one can be active, multiple may exist when there
@@ -283,7 +304,9 @@ class Device extends EventEmitter {
    * Methods to enable/disable each sound. Empty if the {@link Device} has not
    * yet been set up.
    */
-  readonly sounds: Partial<Record<Device.SoundName, (value?: boolean) => void>> = { };
+  readonly sounds: Partial<
+    Record<Device.SoundName, (value?: boolean) => void>
+  > = {};
 
   /**
    * The JWT string currently being used to authenticate this {@link Device}.
@@ -324,6 +347,11 @@ class Device extends EventEmitter {
     [Device.SoundName.Incoming]: true,
     [Device.SoundName.Outgoing]: true,
   };
+
+  /**
+   * An inbound audio processor for remote audio streams.
+   */
+  private _inboundAudioProcessor?: InboundAudioProcessor;
 
   /**
    * Whether SDK is run as a browser extension
@@ -379,9 +407,9 @@ class Device extends EventEmitter {
     noRegister: false,
     pStreamFactory: PStream,
     preflight: false,
-    rtcConstraints: { },
+    rtcConstraints: {},
     soundFactory: Sound,
-    sounds: { },
+    sounds: {},
     warnings: true,
   };
 
@@ -422,8 +450,9 @@ class Device extends EventEmitter {
       const root: any = window as any;
       const browser: any = root.msBrowser || root.browser || root.chrome;
 
-      this._isBrowserExtension = (!!browser && !!browser.runtime && !!browser.runtime.id)
-        || (!!root.safari && !!root.safari.extension);
+      this._isBrowserExtension =
+        (!!browser && !!browser.runtime && !!browser.runtime.id) ||
+        (!!root.safari && !!root.safari.extension);
     }
 
     if (this._isBrowserExtension) {
@@ -432,15 +461,16 @@ class Device extends EventEmitter {
 
     if (navigator) {
       const n = navigator as any;
-      this._networkInformation = n.connection
-        || n.mozConnection
-        || n.webkitConnection;
+      this._networkInformation =
+        n.connection || n.mozConnection || n.webkitConnection;
     }
 
     if (token) {
       this.setup(token, options);
     } else if (options) {
-      throw new InvalidArgumentError('Cannot construct a Device with options but without a token');
+      throw new InvalidArgumentError(
+        'Cannot construct a Device with options but without a token',
+      );
     }
   }
 
@@ -471,17 +501,23 @@ class Device extends EventEmitter {
    * @param [audioConstraints]
    * @param [rtcConfiguration] - An RTCConfiguration to override the one set in `Device.setup`.
    */
-  connect(params?: Record<string, string>,
-          audioConstraints?: MediaTrackConstraints | boolean,
-          rtcConfiguration?: RTCConfiguration): Connection;
+  connect(
+    params?: Record<string, string>,
+    audioConstraints?: MediaTrackConstraints | boolean,
+    rtcConfiguration?: RTCConfiguration,
+  ): Connection;
   /**
    * Add a listener for the connect event.
    * @param handler - A handler to set on the connect event.
    */
   connect(handler: (connection: Connection) => any): null;
-  connect(paramsOrHandler?: Record<string, string> | ((connection: Connection) => any),
-          audioConstraints?: MediaTrackConstraints | boolean,
-          rtcConfiguration?: RTCConfiguration): Connection | null {
+  connect(
+    paramsOrHandler?:
+      | Record<string, string>
+      | ((connection: Connection) => any),
+    audioConstraints?: MediaTrackConstraints | boolean,
+    rtcConfiguration?: RTCConfiguration,
+  ): Connection | null {
     if (typeof paramsOrHandler === 'function') {
       this._addHandler(Device.EventName.Connect, paramsOrHandler);
       return null;
@@ -493,14 +529,17 @@ class Device extends EventEmitter {
       throw new InvalidStateError('A Connection is already active');
     }
 
-    const params: Record<string, string> = paramsOrHandler || { };
-    audioConstraints = audioConstraints || this.options && this.options.audioConstraints || { };
+    const params: Record<string, string> = paramsOrHandler || {};
+    audioConstraints =
+      audioConstraints || (this.options && this.options.audioConstraints) || {};
     rtcConfiguration = rtcConfiguration || this.options.rtcConfiguration;
 
-    const connection = this._activeConnection = this._makeConnection(params, { rtcConfiguration });
+    const connection = (this._activeConnection = this._makeConnection(params, {
+      rtcConfiguration,
+    }));
 
     // Make sure any incoming connections are ignored
-    this.connections.splice(0).forEach(conn => conn.ignore());
+    this.connections.splice(0).forEach((conn) => conn.ignore());
 
     // Stop the incoming sound if it's playing
     this.soundcache.get(Device.SoundName.Incoming).stop();
@@ -526,8 +565,14 @@ class Device extends EventEmitter {
       this.stream = null;
     }
 
-    if (this._networkInformation && typeof this._networkInformation.removeEventListener === 'function') {
-      this._networkInformation.removeEventListener('change', this._publishNetworkChange);
+    if (
+      this._networkInformation &&
+      typeof this._networkInformation.removeEventListener === 'function'
+    ) {
+      this._networkInformation.removeEventListener(
+        'change',
+        this._publishNetworkChange,
+      );
     }
 
     if (typeof window !== 'undefined' && window.removeEventListener) {
@@ -554,14 +599,6 @@ class Device extends EventEmitter {
   disconnectAll(): void {
     this._throwUnlessSetup('disconnectAll');
     this._disconnectAll();
-  }
-
-  /**
-   * Returns the {@link Edge} value the {@link Device} is currently connected
-   * to. The value will be `null` when the {@link Device} is offline.
-   */
-  get edge(): string | null {
-    return this._edge;
   }
 
   /**
@@ -607,7 +644,7 @@ class Device extends EventEmitter {
   region(): string {
     this._log.warn(
       '`Device.region` is deprecated and will be removed in the next major ' +
-      'release. Please use `Device.edge` instead.',
+        'release. Please use `Device.edge` instead.',
     );
     this._throwUnlessSetup('region');
     return typeof this._region === 'string' ? this._region : 'offline';
@@ -629,9 +666,23 @@ class Device extends EventEmitter {
    * @param event - The event name to stop listening for
    * @param listener - The callback to remove
    */
-  removeListener(event: Device.EventName, listener: (...args: any[]) => void): this {
+  removeListener(
+    event: Device.EventName,
+    listener: (...args: any[]) => void,
+  ): this {
     EventEmitter.prototype.removeListener.call(this, event, listener);
     return this;
+  }
+
+  /**
+   * Register an inbound audio processor for remote audio streams.
+   */
+  setInboundAudioProcessor(processor: InboundAudioProcessor): void {
+    this._inboundAudioProcessor = processor;
+    // Optionally, propagate to active connection
+    if (this._activeConnection) {
+      this._activeConnection.setInboundAudioProcessor(processor);
+    }
   }
 
   /**
@@ -639,13 +690,13 @@ class Device extends EventEmitter {
    * @param token - A Twilio JWT token string granting this {@link Device} access.
    * @param [options]
    */
-  setup(token: string, options: Device.Options = { }): this {
+  setup(token: string, options: Device.Options = {}): this {
     if (isLegacyEdge()) {
       throw new NotSupportedError(
         'Microsoft Edge Legacy (https://support.microsoft.com/en-us/help/4533505/what-is-microsoft-edge-legacy) ' +
-        'is deprecated and will not be able to connect to Twilio to make or receive calls after September 1st, 2020. ' +
-        'Please see this documentation for a list of supported browsers ' +
-        'https://www.twilio.com/docs/voice/client/javascript#supported-browsers',
+          'is deprecated and will not be able to connect to Twilio to make or receive calls after September 1st, 2020. ' +
+          'Please see this documentation for a list of supported browsers ' +
+          'https://www.twilio.com/docs/voice/client/javascript#supported-browsers',
       );
     }
     if (!Device.isSupported && !options.ignoreBrowserSupport) {
@@ -672,8 +723,8 @@ class Device extends EventEmitter {
       this.options.debug
         ? Log.levels.DEBUG
         : this.options.warnings
-          ? Log.levels.WARN
-          : Log.levels.SILENT,
+        ? Log.levels.WARN
+        : Log.levels.SILENT,
     );
 
     this._chunderURIs = this.options.chunderw
@@ -685,11 +736,17 @@ class Device extends EventEmitter {
         ).map((uri: string) => `wss://${uri}/signal`);
 
     if (typeof Device._isUnifiedPlanDefault === 'undefined') {
-      Device._isUnifiedPlanDefault = typeof window !== 'undefined'
-        && typeof RTCPeerConnection !== 'undefined'
-        && typeof RTCRtpTransceiver !== 'undefined'
-      ? isUnifiedPlanDefault(window, window.navigator, RTCPeerConnection, RTCRtpTransceiver)
-      : false;
+      Device._isUnifiedPlanDefault =
+        typeof window !== 'undefined' &&
+        typeof RTCPeerConnection !== 'undefined' &&
+        typeof RTCRtpTransceiver !== 'undefined'
+          ? isUnifiedPlanDefault(
+              window,
+              window.navigator,
+              RTCPeerConnection,
+              RTCRtpTransceiver,
+            )
+          : false;
     }
 
     Device._getOrCreateAudioContext();
@@ -704,7 +761,9 @@ class Device extends EventEmitter {
     }
 
     if (this.isInitialized) {
-      this._log.info('Found existing Device; using new token but ignoring options');
+      this._log.info(
+        'Found existing Device; using new token but ignoring options',
+      );
       this.updateToken(token);
       return this;
     }
@@ -717,8 +776,10 @@ class Device extends EventEmitter {
 
     const getOrSetSound = (key: Device.ToggleableSound, value?: boolean) => {
       if (!hasBeenWarnedSounds) {
-        this._log.warn('Device.sounds is deprecated and will be removed in the next breaking ' +
-          'release. Please use the new functionality available on Device.audio.');
+        this._log.warn(
+          'Device.sounds is deprecated and will be removed in the next breaking ' +
+            'release. Please use the new functionality available on Device.audio.',
+        );
         hasBeenWarnedSounds = true;
       }
 
@@ -729,8 +790,11 @@ class Device extends EventEmitter {
       return this._enabledSounds[key];
     };
 
-    [Device.SoundName.Disconnect, Device.SoundName.Incoming, Device.SoundName.Outgoing]
-        .forEach((eventName: Device.SoundName) => {
+    [
+      Device.SoundName.Disconnect,
+      Device.SoundName.Incoming,
+      Device.SoundName.Outgoing,
+    ].forEach((eventName: Device.SoundName) => {
       this.sounds[eventName] = getOrSetSound.bind(null, eventName);
     });
 
@@ -755,12 +819,18 @@ class Device extends EventEmitter {
     for (const name of Object.keys(defaultSounds)) {
       const soundDef: ISoundDefinition = defaultSounds[name];
 
-      const defaultUrl: string = `${C.SOUNDS_BASE_URL}/${soundDef.filename}.${Device.extension}`
-        + `?cache=${C.RELEASE_VERSION}`;
+      const defaultUrl: string =
+        `${C.SOUNDS_BASE_URL}/${soundDef.filename}.${Device.extension}` +
+        `?cache=${C.RELEASE_VERSION}`;
 
-      const soundUrl: string = this.options.sounds && this.options.sounds[name as Device.SoundName] || defaultUrl;
+      const soundUrl: string =
+        (this.options.sounds &&
+          this.options.sounds[name as Device.SoundName]) ||
+        defaultUrl;
       const sound: any = new this.options.soundFactory(name, soundUrl, {
-        audioContext: this.options.disableAudioContextSounds ? null : Device.audioContext,
+        audioContext: this.options.disableAudioContextSounds
+          ? null
+          : Device.audioContext,
         maxDuration: soundDef.maxDuration,
         shouldLoop: soundDef.shouldLoop,
       });
@@ -768,14 +838,18 @@ class Device extends EventEmitter {
       this.soundcache.set(name as Device.SoundName, sound);
     }
 
-    this._publisher = (this.options.Publisher || Publisher)('twilio-js-sdk', token, {
-      defaultPayload: this._createDefaultPayload,
-      host: this.options.eventgw,
-      metadata: {
-        app_name: this.options.appName,
-        app_version: this.options.appVersion,
-      },
-    } as any);
+    this._publisher = (this.options.Publisher || Publisher)(
+      'twilio-js-sdk',
+      token,
+      {
+        defaultPayload: this._createDefaultPayload,
+        host: this.options.eventgw,
+        metadata: {
+          app_name: this.options.appName,
+          app_version: this.options.appVersion,
+        },
+      } as any,
+    );
 
     if (this.options.publishEvents === false) {
       this._publisher.disable();
@@ -785,24 +859,41 @@ class Device extends EventEmitter {
       });
     }
 
-    if (this._networkInformation && typeof this._networkInformation.addEventListener === 'function') {
-      this._networkInformation.addEventListener('change', this._publishNetworkChange);
+    if (
+      this._networkInformation &&
+      typeof this._networkInformation.addEventListener === 'function'
+    ) {
+      this._networkInformation.addEventListener(
+        'change',
+        this._publishNetworkChange,
+      );
     }
 
-    this.audio = new (this.options.AudioHelper || AudioHelper)
-        (this._updateSinkIds, this._updateInputStream, this.options.getUserMedia || getUserMedia, {
-      audioContext: Device.audioContext,
-      enabledSounds: this._enabledSounds,
-      enumerateDevices: this.options.enumerateDevices,
-    }) as AudioHelper;
+    this.audio = new (this.options.AudioHelper || AudioHelper)(
+      this._updateSinkIds,
+      this._updateInputStream,
+      this.options.getUserMedia || getUserMedia,
+      {
+        audioContext: Device.audioContext,
+        enabledSounds: this._enabledSounds,
+        enumerateDevices: this.options.enumerateDevices,
+      },
+    ) as AudioHelper;
 
     this.audio.on('deviceChange', (lostActiveDevices: MediaDeviceInfo[]) => {
       const activeConnection: Connection | null = this._activeConnection;
-      const deviceIds: string[] = lostActiveDevices.map((device: MediaDeviceInfo) => device.deviceId);
+      const deviceIds: string[] = lostActiveDevices.map(
+        (device: MediaDeviceInfo) => device.deviceId,
+      );
 
-      this._publisher.info('audio', 'device-change', {
-        lost_active_device_ids: deviceIds,
-      }, activeConnection);
+      this._publisher.info(
+        'audio',
+        'device-change',
+        {
+          lost_active_device_ids: deviceIds,
+        },
+        activeConnection,
+      );
 
       if (activeConnection) {
         activeConnection.mediaStream._onInputDevicesChanged();
@@ -826,7 +917,9 @@ class Device extends EventEmitter {
     // customer, and anything that's not a fatal error should not be emitted
     // via error event.
     this.on(Device.EventName.Error, () => {
-      if (this.listenerCount('error') > 1) { return; }
+      if (this.listenerCount('error') > 1) {
+        return;
+      }
       this._log.info('Uncaught error event suppressed.');
     });
 
@@ -875,9 +968,13 @@ class Device extends EventEmitter {
    * @param eventName - Name of the event
    * @param handler - A handler to call when the event is emitted
    */
-  private _addHandler(eventName: Device.EventName, handler: (...args: any[]) => any): this {
+  private _addHandler(
+    eventName: Device.EventName,
+    handler: (...args: any[]) => any,
+  ): this {
     if (!hasBeenWarnedHandlers) {
-      this._log.warn(`Device callback handlers (connect, error, offline, incoming, cancel, ready, disconnect) \
+      this._log
+        .warn(`Device callback handlers (connect, error, offline, incoming, cancel, ready, disconnect) \
         have been deprecated and will be removed in the next breaking release. Instead, the EventEmitter \
         interface can be used to set event listeners. Example: device.on('${eventName}', handler)`);
       hasBeenWarnedHandlers = true;
@@ -907,12 +1004,16 @@ class Device extends EventEmitter {
    * @param event
    */
   private _confirmClose = (event: any): string => {
-    if (!this._activeConnection) { return ''; }
+    if (!this._activeConnection) {
+      return '';
+    }
 
-    const closeProtection: boolean | string = this.options.closeProtection || false;
-    const confirmationMsg: string = typeof closeProtection !== 'string'
-      ? 'A call is currently in-progress. Leaving or reloading this page will end the call.'
-      : closeProtection;
+    const closeProtection: boolean | string =
+      this.options.closeProtection || false;
+    const confirmationMsg: string =
+      typeof closeProtection !== 'string'
+        ? 'A call is currently in-progress. Leaving or reloading this page will end the call.'
+        : closeProtection;
 
     (event || window.event).returnValue = confirmationMsg;
     return confirmationMsg;
@@ -922,7 +1023,9 @@ class Device extends EventEmitter {
    * Create the default Insights payload
    * @param [connection]
    */
-  private _createDefaultPayload = (connection?: Connection): Record<string, any> => {
+  private _createDefaultPayload = (
+    connection?: Connection,
+  ): Record<string, any> => {
     const payload: Record<string, any> = {
       aggressive_nomination: this.options.forceAggressiveIceNomination,
       browser_extension: this._isBrowserExtension,
@@ -932,8 +1035,13 @@ class Device extends EventEmitter {
       sdk_version: C.RELEASE_VERSION,
     };
 
-    function setIfDefined(propertyName: string, value: string | undefined | null) {
-      if (value) { payload[propertyName] = value; }
+    function setIfDefined(
+      propertyName: string,
+      value: string | undefined | null,
+    ) {
+      if (value) {
+        payload[propertyName] = value;
+      }
     }
 
     if (connection) {
@@ -968,8 +1076,13 @@ class Device extends EventEmitter {
    * @param callSid
    */
   private _findConnection(callSid: string): Connection | null {
-    return this.connections.find(conn => conn.parameters.CallSid === callSid
-      || conn.outboundConnectionId === callSid) || null;
+    return (
+      this.connections.find(
+        (conn) =>
+          conn.parameters.CallSid === callSid ||
+          conn.outboundConnectionId === callSid,
+      ) || null
+    );
   }
 
   /**
@@ -977,7 +1090,10 @@ class Device extends EventEmitter {
    * @param twimlParams - A flat object containing key:value pairs to be sent to the TwiML app.
    * @param [options] - Options to be used to instantiate the {@link Connection}.
    */
-  private _makeConnection(twimlParams: Record<string, string>, options?: Connection.Options): Connection {
+  private _makeConnection(
+    twimlParams: Record<string, string>,
+    options?: Connection.Options,
+  ): Connection {
     if (typeof Device._isUnifiedPlanDefault === 'undefined') {
       throw new InvalidStateError('Device has not been initialized.');
     }
@@ -991,43 +1107,60 @@ class Device extends EventEmitter {
       soundcache: this.soundcache,
     };
 
-    options = Object.assign({
-      MediaStream: this.options.MediaStream
-        || this.options.mediaStreamFactory
-        || rtc.PeerConnection,
-      RTCPeerConnection: this.options.RTCPeerConnection,
-      audioConstraints: this.options.audioConstraints,
-      beforeAccept: (conn: Connection) => {
-        if (!this._activeConnection || this._activeConnection === conn) {
-          return;
-        }
+    options = Object.assign(
+      {
+        MediaStream:
+          this.options.MediaStream ||
+          this.options.mediaStreamFactory ||
+          rtc.PeerConnection,
+        RTCPeerConnection: this.options.RTCPeerConnection,
+        audioConstraints: this.options.audioConstraints,
+        beforeAccept: (conn: Connection) => {
+          if (!this._activeConnection || this._activeConnection === conn) {
+            return;
+          }
 
-        this._activeConnection.disconnect();
-        this._removeConnection(this._activeConnection);
+          this._activeConnection.disconnect();
+          this._removeConnection(this._activeConnection);
+        },
+        codecPreferences: this.options.codecPreferences,
+        dialtonePlayer: Device._dialtonePlayer,
+        dscp: this.options.dscp,
+        enableIceRestart: this.options.enableIceRestart,
+        enableRingingState: this.options.enableRingingState,
+        forceAggressiveIceNomination: this.options.forceAggressiveIceNomination,
+        getInputStream: (): MediaStream | null =>
+          this.options.fileInputStream || this._connectionInputStream,
+        getSinkIds: (): string[] => this._connectionSinkIds,
+        maxAverageBitrate: this.options.maxAverageBitrate,
+        onGetUserMedia: () => this._onGetUserMedia(),
+        preflight: this.options.preflight,
+        rtcConfiguration: this.options.rtcConfiguration || {
+          iceServers: this.options.iceServers,
+        },
+        rtcConstraints: this.options.rtcConstraints,
+        shouldPlayDisconnect: () => this._enabledSounds.disconnect,
+        twimlParams,
       },
-      codecPreferences: this.options.codecPreferences,
-      dialtonePlayer: Device._dialtonePlayer,
-      dscp: this.options.dscp,
-      enableIceRestart: this.options.enableIceRestart,
-      enableRingingState: this.options.enableRingingState,
-      forceAggressiveIceNomination: this.options.forceAggressiveIceNomination,
-      getInputStream: (): MediaStream | null => this.options.fileInputStream || this._connectionInputStream,
-      getSinkIds: (): string[] => this._connectionSinkIds,
-      maxAverageBitrate: this.options.maxAverageBitrate,
-      onGetUserMedia: () => this._onGetUserMedia(),
-      preflight: this.options.preflight,
-      rtcConfiguration: this.options.rtcConfiguration || { iceServers: this.options.iceServers },
-      rtcConstraints: this.options.rtcConstraints,
-      shouldPlayDisconnect: () => this._enabledSounds.disconnect,
-      twimlParams,
-    }, options);
+      options,
+    );
 
     const connection = new this.options.connectionFactory(config, options);
-    this._publisher.info('settings', 'init', {
-      RTCPeerConnection: Boolean(this.options.RTCPeerConnection),
-      enumerateDevices: Boolean(this.options.enumerateDevices),
-      getUserMedia: Boolean(this.options.getUserMedia),
-    }, connection);
+    this._publisher.info(
+      'settings',
+      'init',
+      {
+        RTCPeerConnection: Boolean(this.options.RTCPeerConnection),
+        enumerateDevices: Boolean(this.options.enumerateDevices),
+        getUserMedia: Boolean(this.options.getUserMedia),
+      },
+      connection,
+    );
+
+    // Propagate inbound audio processor if set
+    if (this._inboundAudioProcessor) {
+      connection.setInboundAudioProcessor(this._inboundAudioProcessor);
+    }
 
     connection.once('accept', () => {
       this._removeConnection(connection);
@@ -1036,14 +1169,19 @@ class Device extends EventEmitter {
         this.audio._maybeStartPollingVolume();
       }
 
-      if (connection.direction === Connection.CallDirection.Outgoing && this._enabledSounds.outgoing) {
+      if (
+        connection.direction === Connection.CallDirection.Outgoing &&
+        this._enabledSounds.outgoing
+      ) {
         this.soundcache.get(Device.SoundName.Outgoing).play();
       }
 
       const data: any = { edge: this._edge || this._region };
       const selectedEdge = this.options.edge;
       if (selectedEdge) {
-        data['selected_edge'] = Array.isArray(selectedEdge) ? selectedEdge : [selectedEdge];
+        data['selected_edge'] = Array.isArray(selectedEdge)
+          ? selectedEdge
+          : [selectedEdge];
       }
 
       this._publisher.info('settings', 'edge', data, connection);
@@ -1115,9 +1253,12 @@ class Device extends EventEmitter {
    * Called after a successful getUserMedia call
    */
   private _onGetUserMedia = () => {
-    this.audio?._updateAvailableDevices().catch(error => {
+    this.audio?._updateAvailableDevices().catch((error) => {
       // Ignore error, we don't want to break the call flow
-      this._log.warn('Unable to updateAvailableDevices after getUserMedia call', error);
+      this._log.warn(
+        'Unable to updateAvailableDevices after getUserMedia call',
+        error,
+      );
     });
   }
 
@@ -1142,7 +1283,9 @@ class Device extends EventEmitter {
    * Called when an 'error' event is received from the signaling stream.
    */
   private _onSignalingError = (payload: Record<string, any>) => {
-    if (!payload.error) { return; }
+    if (!payload.error) {
+      return;
+    }
 
     const error = { ...payload.error };
     const sid = payload.callsid;
@@ -1177,14 +1320,20 @@ class Device extends EventEmitter {
     }
 
     if (!payload.callsid || !payload.sdp) {
-      this.emit('error', { message: 'Malformed invite from gateway', twilioError: new ClientErrors.BadRequest() });
+      this.emit('error', {
+        message: 'Malformed invite from gateway',
+        twilioError: new ClientErrors.BadRequest(),
+      });
       return;
     }
 
-    const callParameters = payload.parameters || { };
+    const callParameters = payload.parameters || {};
     callParameters.CallSid = callParameters.CallSid || payload.callsid;
 
-    const customParameters = Object.assign({ }, queryToJson(callParameters.Params));
+    const customParameters = Object.assign(
+      {},
+      queryToJson(callParameters.Params),
+    );
     const connection = this._makeConnection(customParameters, {
       callParameters,
       offerSdp: payload.sdp,
@@ -1197,9 +1346,10 @@ class Device extends EventEmitter {
       this._publishNetworkChange();
     });
 
-    const play = (this._enabledSounds.incoming && !wasBusy)
-      ? () => this.soundcache.get(Device.SoundName.Incoming).play()
-      : () => Promise.resolve();
+    const play =
+      this._enabledSounds.incoming && !wasBusy
+        ? () => this.soundcache.get(Device.SoundName.Incoming).play()
+        : () => Promise.resolve();
 
     this._showIncomingConnection(connection, play);
   }
@@ -1233,13 +1383,18 @@ class Device extends EventEmitter {
     }
 
     if (this._networkInformation) {
-      this._publisher.info('network-information', 'network-change', {
-        connection_type: this._networkInformation.type,
-        downlink: this._networkInformation.downlink,
-        downlinkMax: this._networkInformation.downlinkMax,
-        effective_type: this._networkInformation.effectiveType,
-        rtt: this._networkInformation.rtt,
-      }, this._activeConnection);
+      this._publisher.info(
+        'network-information',
+        'network-change',
+        {
+          connection_type: this._networkInformation.type,
+          downlink: this._networkInformation.downlink,
+          downlinkMax: this._networkInformation.downlinkMax,
+          effective_type: this._networkInformation.effectiveType,
+          rtt: this._networkInformation.rtt,
+        },
+        this._activeConnection,
+      );
     }
   }
 
@@ -1263,7 +1418,9 @@ class Device extends EventEmitter {
    * Register with the signaling server.
    */
   private _sendPresence(): void {
-    if (!this.stream) { return; }
+    if (!this.stream) {
+      return;
+    }
 
     this.stream.register({ audio: this.mediaPresence.audio });
     if (this.mediaPresence.audio) {
@@ -1296,22 +1453,28 @@ class Device extends EventEmitter {
    * @param connection
    * @param play - The function to be used to play the sound. Must return a Promise.
    */
-  private _showIncomingConnection(connection: Connection, play: Function): Promise<void> {
+  private _showIncomingConnection(
+    connection: Connection,
+    play: Function,
+  ): Promise<void> {
     let timeout: NodeJS.Timer;
     return Promise.race([
       play(),
       new Promise((resolve, reject) => {
         timeout = setTimeout(() => {
-          const msg = 'Playing incoming ringtone took too long; it might not play. Continuing execution...';
+          const msg =
+            'Playing incoming ringtone took too long; it might not play. Continuing execution...';
           reject(new Error(msg));
         }, RINGTONE_PLAY_TIMEOUT);
       }),
-    ]).catch(reason => {
-      this._log.info(reason.message);
-    }).then(() => {
-      clearTimeout(timeout);
-      this.emit('incoming', connection);
-    });
+    ])
+      .catch((reason) => {
+        this._log.info(reason.message);
+      })
+      .then(() => {
+        clearTimeout(timeout);
+        this.emit('incoming', connection);
+      });
   }
 
   /**
@@ -1338,7 +1501,9 @@ class Device extends EventEmitter {
    * @param methodName - The name of the method being called before setup()
    */
   private _throwUnlessSetup(methodName: string) {
-    if (!this.isInitialized) { throw new InvalidStateError(`Call Device.setup() before ${methodName}`); }
+    if (!this.isInitialized) {
+      throw new InvalidStateError(`Call Device.setup() before ${methodName}`);
+    }
   }
 
   /**
@@ -1346,11 +1511,17 @@ class Device extends EventEmitter {
    * will use the new input stream.
    * @param inputStream
    */
-  private _updateInputStream = (inputStream: MediaStream | null): Promise<void> => {
+  private _updateInputStream = (
+    inputStream: MediaStream | null,
+  ): Promise<void> => {
     const connection: Connection | null = this._activeConnection;
 
     if (connection && !inputStream) {
-      return Promise.reject(new InvalidStateError('Cannot unset input device while a call is in progress.'));
+      return Promise.reject(
+        new InvalidStateError(
+          'Cannot unset input device while a call is in progress.',
+        ),
+      );
     }
 
     this._connectionInputStream = inputStream;
@@ -1364,7 +1535,9 @@ class Device extends EventEmitter {
    * @param sinkIds - An array of device IDs
    */
   private _updateRingtoneSinkIds(sinkIds: string[]): Promise<void> {
-    return Promise.resolve(this.soundcache.get(Device.SoundName.Incoming).setSinkIds(sinkIds));
+    return Promise.resolve(
+      this.soundcache.get(Device.SoundName.Incoming).setSinkIds(sinkIds),
+    );
   }
 
   /**
@@ -1372,23 +1545,40 @@ class Device extends EventEmitter {
    * @param type - Whether to update ringtone or speaker sounds
    * @param sinkIds - An array of device IDs
    */
-  private _updateSinkIds = (type: 'ringtone' | 'speaker', sinkIds: string[]): Promise<void> => {
-    const promise: Promise<void> = type === 'ringtone'
-      ? this._updateRingtoneSinkIds(sinkIds)
-      : this._updateSpeakerSinkIds(sinkIds);
+  private _updateSinkIds = (
+    type: 'ringtone' | 'speaker',
+    sinkIds: string[],
+  ): Promise<void> => {
+    const promise: Promise<void> =
+      type === 'ringtone'
+        ? this._updateRingtoneSinkIds(sinkIds)
+        : this._updateSpeakerSinkIds(sinkIds);
 
-    return promise.then(() => {
-      this._publisher.info('audio', `${type}-devices-set`, {
-        audio_device_ids: sinkIds,
-      }, this._activeConnection);
-    }, error => {
-      this._publisher.error('audio', `${type}-devices-set-failed`, {
-        audio_device_ids: sinkIds,
-        message: error.message,
-      }, this._activeConnection);
+    return promise.then(
+      () => {
+        this._publisher.info(
+          'audio',
+          `${type}-devices-set`,
+          {
+            audio_device_ids: sinkIds,
+          },
+          this._activeConnection,
+        );
+      },
+      (error) => {
+        this._publisher.error(
+          'audio',
+          `${type}-devices-set-failed`,
+          {
+            audio_device_ids: sinkIds,
+            message: error.message,
+          },
+          this._activeConnection,
+        );
 
-      throw error;
-    });
+        throw error;
+      },
+    );
   }
 
   /**
@@ -1398,14 +1588,12 @@ class Device extends EventEmitter {
    */
   private _updateSpeakerSinkIds(sinkIds: string[]): Promise<void> {
     Array.from(this.soundcache.entries())
-      .filter(entry => entry[0] !== Device.SoundName.Incoming)
-      .forEach(entry => entry[1].setSinkIds(sinkIds));
+      .filter((entry) => entry[0] !== Device.SoundName.Incoming)
+      .forEach((entry) => entry[1].setSinkIds(sinkIds));
 
     this._connectionSinkIds = sinkIds;
     const connection = this._activeConnection;
-    return connection
-      ? connection._setSinkIds(sinkIds)
-      : Promise.resolve();
+    return connection ? connection._setSinkIds(sinkIds) : Promise.resolve();
   }
 
   /**
@@ -1525,7 +1713,10 @@ namespace Device {
   /**
    * Names of all togglable sounds.
    */
-  export type ToggleableSound = Device.SoundName.Incoming | Device.SoundName.Outgoing | Device.SoundName.Disconnect;
+  export type ToggleableSound =
+    | Device.SoundName.Incoming
+    | Device.SoundName.Outgoing
+    | Device.SoundName.Disconnect;
 
   /**
    * The error format used by errors emitted from {@link Device}.
@@ -1545,7 +1736,7 @@ namespace Device {
     /**
      * The info object from rtc/peerconnection or eventpublisher. May contain code and message (duplicated here).
      */
-    info?: { code?: number, message?: string };
+    info?: { code?: number; message?: string };
 
     /**
      * Error message
